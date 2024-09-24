@@ -1,0 +1,439 @@
+<!DOCTYPE html>
+<html>
+
+<head>
+    <title>Solar and Wind Plant in QLD, NSW, SA, and VIC</title>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <link rel="stylesheet" href="https://unpkg.com/leaflet@1.7.1/dist/leaflet.css" />
+    <style>
+        #map {
+            height: 800px;
+        }
+
+        .legend {
+            background: white;
+            padding: 10px;
+            line-height: 18px;
+            color: #555;
+        }
+
+        .legend i {
+            width: 18px;
+            height: 18px;
+            float: left;
+            margin-right: 8px;
+            opacity: 0.7;
+        }
+    </style>
+</head>
+
+<body>
+    <h1>Solar and Wind Plant in QLD, NSW, SA, and VIC</h1>
+    <input type="file" id="fileInput" />
+    <div id="map"></div>
+    <script src="https://unpkg.com/leaflet@1.7.1/dist/leaflet.js"></script>
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/xlsx/0.16.9/xlsx.full.min.js"></script>
+    <script>
+        window.onload = function () {
+            document.getElementById('fileInput').addEventListener('change', handleFile, false);
+        }
+        // Create a map centered in Queensland and New South Wales
+        var map = L.map('map').setView([-30, 135], 5);
+
+        // Add a tile layer to the map (OpenStreetMap tiles)
+        L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png', {
+            attribution: '&copy; <a href="https://www.openstreetmap.org/copyright">OpenStreetMap</a> contributors'
+        }).addTo(map);
+
+        function handleFile(e) {
+            const file = e.target.files[0];
+            const reader = new FileReader();
+
+            reader.onload = function (event) {
+                const data = new Uint8Array(event.target.result);
+                const workbook = XLSX.read(data, { type: 'array' });
+
+                workbook.SheetNames.forEach(function (sheetName) {
+                    const worksheet = workbook.Sheets[sheetName];
+                    const jsonData = XLSX.utils.sheet_to_json(worksheet, { header: 1 });
+                    //  console.log('Sheet:', sheetName, jsonData);
+
+                    switch (sheetName) {
+                        case 'QLD Solar':
+                            qldSolarPlants = transformData(jsonData);
+                            console.log('qldSolarPlants', qldSolarPlants)
+                            break;
+                        case 'NSW Solar':
+                            nswSolarPlants = transformData(jsonData);
+                            break;
+                        case 'SA Solar':
+                            saSolarPlants = transformData(jsonData);
+                            break;
+                        case 'VIC Solar':
+                            vicSolarPlants = transformData(jsonData);
+                            break;
+                        case 'QLD Wind':
+                            qldWindPlants = transformData(jsonData);
+                            break;
+                        case 'NSW Wind':
+                            nswWindPlants = transformData(jsonData);
+                            break;
+                        case 'SA Wind':
+                            saWindPlants = transformData(jsonData);
+                            break;
+                        case 'VIC Wind':
+                            vicWindPlants = transformData(jsonData);
+                            break;
+                        default:
+                            console.warn('Unknown sheet:', sheetName);
+                    }
+
+                });
+                updateMap();
+            };
+
+            reader.readAsArrayBuffer(file);
+        }
+        function transformData(data) {
+            const keys = data[0].slice(1);
+            const result = [];
+
+            for (let i = 1; i < data[1].length; i++) {
+                const temp = [data[0][i]];
+                for (let j = 1; j < data.length; j++) {
+                    let value = parseFloat(data[j][i]);
+                    if (!isNaN(value)) {
+                        value = value.toFixed(2); // Keep only two decimal places
+                    }
+                    temp.push(value);
+                }
+                result.push(temp);
+            }
+
+            return result;
+        }
+        function getMinMaxValues(plants, index) {
+            // 过滤数据表中存在的异常数据
+            let values = plants.map(plant => plant[index]).filter(value => value !== undefined);
+            return [Math.min(...values), Math.max(...values)];
+        }
+
+        function generateDynamicIntervals(minValue, maxValue, steps) {
+            let interval = (maxValue - minValue) / steps;
+            let intervals = [];
+            for (let i = 0; i <= steps; i++) {
+                intervals.push(minValue + (i * interval));
+            }
+            return intervals;
+        }
+        var allSolarPlants = [];
+        var allWindPlants = [];
+        // Define the coordinates and details for the solar plants in Queensland
+        var qldSolarPlants = [];
+        // Define the coordinates and details for the solar plants in New South Wales
+        var nswSolarPlants = [];
+        // Define the coordinates and details for the solar plants in South Australia
+        var saSolarPlants = [];
+        // Define the coordinates and details for the solar plants in Victoria
+        var vicSolarPlants = [];
+        // Define the coordinates and details for the wind plants in Queensland
+        var qldWindPlants = [];
+        // Define the coordinates and details for the wind plants in New South Wales
+        var nswWindPlants = [];
+        // Define the coordinates and details for the wind plants in South Australia
+        var saWindPlants = [];
+        // Define the coordinates and details for the wind plants in Victoria
+        var vicWindPlants = [];
+        var solarInstalledCapacityRange = [];
+        var windInstalledCapacityRange = [];
+        // Get data intervals for fixed steps
+        var installedCapacityIntervals = [];
+        var capacityFactorIntervals = [];
+        var generationIntervals = [];
+        var revenueIntervals = [];
+        var profitIntervals = [];
+        var daysIntervals = [];
+        var daysabovehalfIntervals = [];
+
+        // 风能范围数据
+        var wind_installedCapacityIntervals = [];
+        var wind_capacityFactorIntervals = [];
+        var wind_generationIntervals = [];
+        var wind_revenueIntervals = [];
+        var wind_profitIntervals = [];
+        var wind_daysIntervals = [];
+        var wind_daysabovehalfIntervals = [];
+        function updateMap() {
+            // Combine all solar plant data
+            allSolarPlants = qldSolarPlants.concat(nswSolarPlants, saSolarPlants, vicSolarPlants);
+            // Combine all wind plant data
+            allWindPlants = qldWindPlants.concat(nswWindPlants, saWindPlants, vicWindPlants);
+
+
+
+            var solarInstalledCapacityRange = getMinMaxValues(allSolarPlants, 3);
+            var windInstalledCapacityRange = getMinMaxValues(allWindPlants, 3);
+            // Get data intervals for fixed steps
+            installedCapacityIntervals = generateDynamicIntervals(solarInstalledCapacityRange[0], solarInstalledCapacityRange[1], 10);
+            wind_installedCapacityIntervals = generateDynamicIntervals(windInstalledCapacityRange[0], windInstalledCapacityRange[1], 10);
+
+            var solarCapacityFactorRange = getMinMaxValues(allSolarPlants, 4);
+            var windCapacityFactorRange = getMinMaxValues(allWindPlants, 4);
+
+            capacityFactorIntervals = generateDynamicIntervals(solarCapacityFactorRange[0], solarCapacityFactorRange[1], 10);
+            wind_capacityFactorIntervals = generateDynamicIntervals(windCapacityFactorRange[0], windCapacityFactorRange[1], 10);
+
+            var solarGenerationRange = getMinMaxValues(allSolarPlants, 5);
+            var windGenerationRange = getMinMaxValues(allWindPlants, 5);
+
+            generationIntervals = generateDynamicIntervals(solarGenerationRange[0], solarGenerationRange[1], 10);
+            wind_generationIntervals = generateDynamicIntervals(windGenerationRange[0], windGenerationRange[1], 10);
+
+            var solarRevenueRange = getMinMaxValues(allSolarPlants, 6);
+            var windRevenueRange = getMinMaxValues(allWindPlants, 6);
+            revenueIntervals = generateDynamicIntervals(solarRevenueRange[0], solarRevenueRange[1], 10);
+            wind_revenueIntervals = generateDynamicIntervals(windRevenueRange[0], windRevenueRange[1], 10);
+
+            var solarProfitRange = getMinMaxValues(allSolarPlants, 7);
+            var windProfitRange = getMinMaxValues(allWindPlants, 7);
+            profitIntervals = generateDynamicIntervals(solarProfitRange[0], solarProfitRange[1], 10);
+            wind_profitIntervals = generateDynamicIntervals(windProfitRange[0], windProfitRange[1], 10);
+
+            var solarDaysWorkedRange = getMinMaxValues(allSolarPlants, 8);
+            var windDaysWorkedRange = getMinMaxValues(allWindPlants, 8);
+
+            daysIntervals = generateDynamicIntervals(20, 80, 10);
+            wind_daysIntervals = generateDynamicIntervals(windDaysWorkedRange[0], windDaysWorkedRange[1], 10);
+
+            var solarDaysAboveHalfRange = getMinMaxValues(allSolarPlants, 9);
+            var windDaysAboveHalfRange = getMinMaxValues(allWindPlants, 9);
+            daysabovehalfIntervals = generateDynamicIntervals(solarDaysAboveHalfRange[0], solarDaysAboveHalfRange[1], 15);
+            wind_daysabovehalfIntervals = generateDynamicIntervals(windDaysAboveHalfRange[0], windDaysAboveHalfRange[1], 15);
+
+
+            // Create layers
+            var getcapacityFactorsLayer = function () {
+                var res = [];
+                var solarPlants = createMarkers(allSolarPlants, 4, capacityFactorIntervals, 'Solar');
+                var windPlants = createMarkers(allWindPlants, 4, wind_capacityFactorIntervals, 'Wind');
+                res.push(...solarPlants, ...windPlants);
+                console.log('res', res)
+                return L.layerGroup(res)
+            };
+            var getinstalledCapacityLayer = function () {
+                var res = [];
+                var solarPlants = createMarkers(allSolarPlants, 3, installedCapacityIntervals, 'Solar');
+                var windPlants = createMarkers(allWindPlants, 3, wind_installedCapacityIntervals, 'Wind');
+                res.push(...solarPlants, ...windPlants);
+                return L.layerGroup(res)
+            };
+            var getgenerationLayer = function () {
+                var res = [];
+                var solarPlants = createMarkers(allSolarPlants, 5, generationIntervals, 'Solar');
+                var windPlants = createMarkers(allWindPlants, 5, wind_generationIntervals, 'Wind');
+                res.push(...solarPlants, ...windPlants);
+                return L.layerGroup(res)
+            };
+            var getrevenueLayer = function () {
+                var res = [];
+                var solarPlants = createMarkers(allSolarPlants, 6, revenueIntervals, 'Solar');
+                var windPlants = createMarkers(allWindPlants, 6, wind_revenueIntervals, 'Wind');
+                res.push(...solarPlants, ...windPlants);
+                return L.layerGroup(res)
+            };
+            var getprofitsLayer = function () {
+                var res = [];
+                var solarPlants = createMarkers(allSolarPlants, 7, profitIntervals, 'Solar');
+                var windPlants = createMarkers(allWindPlants, 7,  wind_profitIntervals, 'Wind');
+                res.push(...solarPlants, ...windPlants);
+                return L.layerGroup(res)
+            };
+            var getdaysLayer = function () {
+                var res = [];
+                var solarPlants = createMarkers(allSolarPlants, 8, daysIntervals, 'Solar');
+                var windPlants = createMarkers(allWindPlants, 8, wind_daysIntervals, 'Wind');
+                res.push(...solarPlants, ...windPlants);
+                return L.layerGroup(res)
+            };
+            var getdaysabovehalfLayer = function () {
+                var res = [];
+                var solarPlants = createMarkers(allSolarPlants, 9, daysabovehalfIntervals, 'Solar');
+                var windPlants = createMarkers(allWindPlants, 9, wind_daysabovehalfIntervals, 'Wind');
+                res.push(...solarPlants, ...windPlants);
+                return L.layerGroup(res)
+            };
+            var capacityFactorsLayer = getcapacityFactorsLayer();
+            var installedCapacityLayer = getinstalledCapacityLayer();
+            var generationLayer = getgenerationLayer();
+            var revenueLayer = getrevenueLayer();
+            var profitsLayer = getprofitsLayer();
+            var daysLayer = getdaysLayer();
+            var daysabovehalfLayer = getdaysabovehalfLayer();
+            // Add layer control to the map
+            var layers = {
+                "Installed Capacity(Mw)": installedCapacityLayer,
+                "Capacity Factors(%)": capacityFactorsLayer,
+                "Generation over the day(%)": generationLayer,
+                "Revenue($/Mwh/Year)": revenueLayer,
+                "Operating Profits($/Mw/Year)": profitsLayer,
+                "Days worked in a year(%)": daysLayer,
+                "Days above Average daily Power Generation(%)": daysabovehalfLayer,
+            };
+            L.control.layers(layers).addTo(map);
+            installedCapacityLayer.addTo(map);
+        }
+
+
+        // Function to generate legend intervals with fixed step
+        function generateFixedIntervals(minValue, maxValue, step) {
+            var intervals = [];
+            for (var i = minValue; i <= maxValue; i += step) {
+                intervals.push(i);
+            }
+            return intervals;
+        }
+        // Function to get color based on value using a gradient from light to dark red
+        function getColor(value, intervals) {
+            var step = intervals.findIndex(interval => value < interval);
+            if (step === -1) step = intervals.length - 1;
+            var color = Math.floor(255 - (step / intervals.length * 255));
+            return `rgb(255, ${color}, ${color})`; // Red gradient
+        }
+        function getBlueColor(value, intervals) {
+            // Find the step index where value is less than the interval
+            let step = intervals.findIndex(interval => value < interval);
+
+            // If step is -1, value exceeds all intervals; set step to the last index
+            if (step === -1) step = intervals.length - 1;
+
+            // Calculate the red gradient color
+            // Red ranges from 173 (light blue) to 0 (dark blue)
+            let redIntensity = Math.floor(173 - (step / intervals.length * 173));
+
+            // Green ranges from 216 (light blue) to 0 (dark blue)
+            let greenIntensity = Math.floor(216 - (step / intervals.length * 216));
+
+            // Blue ranges from 230 (light blue) to 139 (dark blue)
+            let blueIntensity = Math.floor(230 - (step / intervals.length * 91));
+
+            // Return the color in RGB format with light blue to dark blue gradient
+            return `rgb(${redIntensity}, ${greenIntensity}, ${blueIntensity})`;
+        }
+        // Function to create markers based on a specific category with gradient colors
+        function createMarkers(plants, categoryIndex, intervals, type) {
+            var markers = [];
+            plants.forEach(plant => {
+                var value = plant[categoryIndex];
+                var color = type == 'Wind' ? getBlueColor(value, intervals) : getColor(value, intervals);
+                var icon = L.divIcon({
+                    className: 'custom-icon',
+                    html: `<div style="background-color: ${color}; width: 16px; height: 16px; border-radius: 50%;"></div>`
+                });
+                var popupContent = `
+                    <b>${plant[0]}</b><br>
+                    Installed Capacity: ${plant[3]}MW<br>
+                    Capacity Factor: ${plant[4]}%<br>
+                    Generation over the day: ${plant[5]}%<br>
+                    Revenue: ${plant[6]}$/MWh/Year<br>
+                    Operating Profits: ${plant[7]}$/MW/Year<br>
+                    Days worked in a year: ${plant[8]}%<br>
+                    Days above Average daily Power Generation(%) ${plant[9]}%<br>
+                `;
+                var marker = L.marker([plant[1], plant[2]], { icon: icon })
+                    .bindPopup(popupContent);
+                markers.push(marker);
+            });
+            return markers;
+        }
+
+        // Function to add legend
+        function addLegend(intervals, position, type) {
+            console.log('addLegend', intervals)
+            var legend = L.control({ position: position });
+
+            legend.onAdd = function (map) {
+                var div = L.DomUtil.create('div', 'legend');
+                for (var i = 0; i < intervals.length - 1; i++) {
+                    var color = type == 'Wind' ? getBlueColor(intervals[i], intervals) : getColor(intervals[i], intervals);
+
+                    div.innerHTML +=
+                        '<i style="background:' + color + '"></i> ' +
+                        intervals[i].toFixed(2) + (intervals[i + 1] ? '&ndash;' + intervals[i + 1].toFixed(2) + '<br>' : '+');
+                }
+                return div;
+            };
+
+            return legend;
+        }
+        function addTypeLegend() {
+            var typeLegend = L.control({ position: 'topleft' });
+
+            typeLegend.onAdd = function (map) {
+                var div = L.DomUtil.create('div', 'legend');
+                div.innerHTML += '<b>Type Legend</b><br>';
+                div.innerHTML += '<i style="background: red"></i> Solar Data<br>';
+                div.innerHTML += '<i style="background: blue"></i> Wind Data<br>';
+                return div;
+            };
+
+            return typeLegend;
+        }
+        // 添加类型图例到地图
+        var typeLegend = addTypeLegend();
+        typeLegend.addTo(map);
+        // Add and update legend based on active layer
+        var LegendLeft, LegendRight;
+
+        function updateLegend(intervals, wind_intervals) {
+            if (LegendLeft) {
+                map.removeControl(LegendLeft);
+            }
+            LegendLeft = addLegend(wind_intervals, 'bottomleft', 'Wind');
+
+            LegendLeft.addTo(map);
+            if (LegendRight) {
+                map.removeControl(LegendRight);
+            }
+            LegendRight = addLegend(intervals, 'bottomright', 'Solar');
+            LegendRight.addTo(map);
+        }
+
+        updateLegend(capacityFactorIntervals, wind_capacityFactorIntervals); // Initial legend
+        console.log('map', map)
+        map.on("zoom", function () {
+            // 执行操作
+            console.log('111')
+        });
+        map.on('baselayerchange', function (e) {
+            console.log('Layer changed to:', e.name); // 添加日志记录
+            switch (e.name) {
+                case "Capacity Factors(%)":
+                    updateLegend(capacityFactorIntervals, wind_capacityFactorIntervals);
+                    break;
+                case "Installed Capacity(Mw)":
+                    updateLegend(installedCapacityIntervals, wind_installedCapacityIntervals);
+                    break;
+                case "Generation over the day(%)":
+                    updateLegend(generationIntervals, wind_generationIntervals);
+                    break;
+                case "Revenue($/Mwh/Year)":
+                    updateLegend(revenueIntervals, wind_revenueIntervals);
+                    break;
+                case "Operating Profits($/Mw/Year)":
+                    updateLegend(profitIntervals, wind_profitIntervals);
+                    break;
+                case "Days worked in a year(%)":
+                    updateLegend(daysIntervals, wind_daysIntervals);
+                    break;
+                case "Days above Average daily Power Generation(%)":
+                    updateLegend(daysabovehalfIntervals, wind_daysabovehalfIntervals);
+                    break;
+                default:
+                    console.log('No matching layer for legend update.');
+            }
+        });
+    </script>
+</body>
+
+</html>
